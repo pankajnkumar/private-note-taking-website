@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome • Team Notes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <main class="min-h-screen flex items-center justify-center p-4">
+        <div class="max-w-3xl w-full bg-white rounded-2xl shadow p-8">
+            <h1 class="text-3xl font-bold text-gray-900">Team Notes Platform</h1>
+            <p class="mt-3 text-gray-600">Create private teams, invite members with secure codes, and collaborate on notes. Each team is isolated, and only invited members can access its content. Manage roles (Admin/Member), upgrade plans, and keep your work organized.</p>
+
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="p-4 border rounded-lg">
+                    <h2 class="text-lg font-semibold text-gray-800">Private Teams</h2>
+                    <p class="text-sm text-gray-600 mt-1">Create multiple teams, each with a unique invite code for secure access.</p>
+                </div>
+                <div class="p-4 border rounded-lg">
+                    <h2 class="text-lg font-semibold text-gray-800">Role-based Access</h2>
+                    <p class="text-sm text-gray-600 mt-1">Admins can manage members and rotate invite codes; members can collaborate.</p>
+                </div>
+                <div class="p-4 border rounded-lg">
+                    <h2 class="text-lg font-semibold text-gray-800">Team Notes</h2>
+                    <p class="text-sm text-gray-600 mt-1">Capture and manage notes per team. Data stays separate between teams.</p>
+                </div>
+            </div>
+
+            <div class="mt-8 flex flex-col sm:flex-row gap-3">
+                <a href="login.html" class="w-full sm:w-auto inline-flex items-center justify-center px-5 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">Login</a>
+                <a href="login.html?tab=register" class="w-full sm:w-auto inline-flex items-center justify-center px-5 py-3 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700">Register</a>
+            </div>
+
+            <p class="mt-6 text-xs text-gray-500">Already logged in? Go to <a class="text-blue-600 hover:underline" href="teams.html">your teams</a>.</p>
+        </div>
+    </main>
+</body>
+</html>
+
+

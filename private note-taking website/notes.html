@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Company Notes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script type="module">
+        import { tenantDB } from './tenant-database.js';
+
+        function getCurrentUser() {
+            const raw = localStorage.getItem('defilaunch_current_user');
+            return raw ? JSON.parse(raw) : null;
+        }
+
+        function setText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
+        function setHtml(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
+
+        function renderNotes(tenant) {
+            const notes = tenantDB.listNotes(tenant.id);
+            const list = notes.map(n => `
+                <div class="border rounded-lg p-4 bg-white">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-semibold text-gray-800">${n.title || 'Untitled'}</h3>
+                        <div class="text-xs text-gray-400">${new Date(n.updatedAt).toLocaleString()}</div>
+                    </div>
+                    <p class="text-gray-600 mt-2 whitespace-pre-wrap">${n.content}</p>
+                    <div class="flex gap-2 mt-3">
+                        <button class="text-blue-600 text-sm" data-action="edit" data-id="${n.id}">Edit</button>
+                        <button class="text-red-600 text-sm" data-action="delete" data-id="${n.id}">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+            setHtml('notes-list', list || '<div class="text-gray-500">No notes yet.</div>');
+        }
+
+        function renderMembers(tenant) {
+            const members = tenantDB.listMembers(tenant.id);
+            const users = JSON.parse(localStorage.getItem('defilaunch_users') || '[]');
+            const byEmail = Object.fromEntries(users.map(u => [u.email, u]));
+            const items = members.map(m => {
+                const u = byEmail[m.userEmail] || {};
+                const name = u.name || m.userEmail;
+                const verified = u.isVerified ? 'Verified' : 'Unverified';
+                const roleFromMembership = (m.role || '').toLowerCase();
+                const roleFromUser = (u.role || '').toLowerCase();
+                const isAdmin = roleFromMembership === 'admin' || roleFromUser === 'admin';
+                const roleBadge = isAdmin ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800';
+                const displayRole = isAdmin ? 'Admin' : 'Member';
+                return `
+                    <div class="flex items-center justify-between p-3 bg-white rounded border">
+                        <div>
+                            <div class="font-medium text-gray-800">${name}</div>
+                            <div class="text-xs text-gray-500">${m.userEmail} • ${verified}</div>
+                        </div>
+                        <span class="text-xs px-2 py-1 rounded ${roleBadge}">${displayRole}</span>
+                    </div>
+                `;
+            }).join('');
+            setHtml('members-list', items || '<div class="text-gray-500">No members yet.</div>');
+        }
+
+        function wireNotesActions(tenant) {
+            document.getElementById('notes-list').addEventListener('click', (e) => {
+                const btn = e.target.closest('button');
+                if (!btn) return;
+                const noteId = btn.getAttribute('data-id');
+                const action = btn.getAttribute('data-action');
+                if (action === 'delete') {
+                    tenantDB.deleteNote(tenant.id, noteId);
+                    renderNotes(tenant);
+                } else if (action === 'edit') {
+                    const wrapper = btn.closest('.border');
+                    const title = prompt('Title:');
+                    if (title === null) return;
+                    const content = prompt('Content:');
+                    if (content === null) return;
+                    tenantDB.updateNote(tenant.id, noteId, title, content);
+                    renderNotes(tenant);
+                }
+            });
+        }
+
+        function setPlanBadge(plan) {
+            setText('plan-badge', plan === 'pro' ? 'Pro' : 'Free');
+            const badge = document.getElementById('plan-badge');
+            badge.className = plan === 'pro' ? 'px-2 py-1 text-xs rounded bg-purple-100 text-purple-700' : 'px-2 py-1 text-xs rounded bg-gray-100 text-gray-700';
+        }
+
+        function getQueryParam(name) {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(name);
+        }
+
+        function init() {
+            const user = getCurrentUser();
+            if (!user) { window.location.href = 'login.html'; return; }
+
+            // Normalize role from authoritative user store if missing or stale
+            const allUsers = JSON.parse(localStorage.getItem('defilaunch_users') || '[]');
+            const stored = allUsers.find(u => (u.email || '').toLowerCase() === (user.email || '').toLowerCase());
+            if (stored && stored.role && stored.role !== user.role) {
+                user.role = stored.role;
+                localStorage.setItem('defilaunch_current_user', JSON.stringify(user));
+            }
+
+            document.body.classList.add('bg-gray-100');
+            setText('user-name', user.name);
+            setText('company-name', user.companyName || 'Company');
+            setText('user-role', user.role || 'member');
+
+            // Require a tenantId in the URL and enforce membership
+            const tenantId = getQueryParam('tenantId');
+            if (!tenantId) { window.location.href = 'teams.html'; return; }
+            const tenant = tenantDB.getTenantById(tenantId);
+            if (!tenant) { window.location.href = 'teams.html'; return; }
+            setPlanBadge(tenant.plan);
+
+            // Enforce membership: only members can access notes
+            const membership = tenantDB.getMembershipForTenant(user.email, tenant.id);
+            if (!membership) { window.location.href = 'teams.html'; return; }
+            // Sync role if membership exists but role differs
+            if ((user.role || 'member') !== (membership.role || 'member')) {
+                tenantDB.updateMemberRole(user.email, tenant.id, user.role || 'member');
+            }
+            renderNotes(tenant);
+            wireNotesActions(tenant);
+            renderMembers(tenant);
+
+            // Create note
+            document.getElementById('create-note-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const title = document.getElementById('note-title').value.trim();
+                const content = document.getElementById('note-content').value.trim();
+                if (!title && !content) return;
+                const result = tenantDB.createNote(tenant.id, user.email, title || 'Untitled', content);
+                const msg = document.getElementById('message');
+                if (!result.success) {
+                    msg.textContent = result.message;
+                    msg.className = 'text-sm text-red-600 mt-2';
+                } else {
+                    msg.textContent = '';
+                    document.getElementById('note-title').value = '';
+                    document.getElementById('note-content').value = '';
+                    renderNotes(tenant);
+                }
+            });
+
+            // Upgrade plan (admins only)
+            const upgradeBtn = document.getElementById('upgrade-btn');
+            if ((user.role || 'member') === 'admin') {
+                upgradeBtn.classList.remove('hidden');
+                upgradeBtn.addEventListener('click', () => {
+                    const res = tenantDB.upgradeTenantToPro(tenant.id);
+                    if (res.success) {
+                        setPlanBadge('pro');
+                    }
+                });
+
+                // Show Add Member form and wire submit
+                const addMemberCard = document.getElementById('add-member-card');
+                addMemberCard.classList.remove('hidden');
+                const addMemberForm = document.getElementById('add-member-form');
+                addMemberForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const email = document.getElementById('invite-email').value.trim().toLowerCase();
+                    const role = document.getElementById('invite-role').value;
+                    const msg = document.getElementById('invite-message');
+                    if (!email) return;
+                    tenantDB.addMembership(email, tenant.id, role);
+                    document.getElementById('invite-email').value = '';
+                    msg.textContent = 'Member added to team';
+                    msg.className = 'text-xs text-green-600 mt-2';
+                    renderMembers(tenant);
+                });
+            } else {
+                upgradeBtn.classList.add('hidden');
+                // Hide Add Member card for non-admins
+                const addMemberCard = document.getElementById('add-member-card');
+                if (addMemberCard) addMemberCard.classList.add('hidden');
+            }
+
+            // Logout
+            document.getElementById('logout-btn').addEventListener('click', () => {
+                localStorage.removeItem('defilaunch_current_user');
+                window.location.href = 'login.html';
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+    </head>
+<body>
+    <div class="max-w-5xl mx-auto p-4">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <div class="text-xl font-semibold text-gray-800" id="company-name"></div>
+                <div class="text-sm text-gray-500">Signed in as <span id="user-name"></span> • <span id="user-role"></span></div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="plan-badge" class="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">Free</span>
+                <button id="upgrade-btn" class="hidden px-3 py-1 text-sm rounded bg-purple-600 text-white hover:bg-purple-700">Upgrade to Pro</button>
+                <button id="logout-btn" class="px-3 py-1 text-sm rounded bg-gray-200 text-gray-700 hover:bg-gray-300">Logout</button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <aside class="lg:col-span-1 space-y-3">
+                <div class="bg-white rounded-lg shadow p-4">
+                    <h2 class="text-sm font-semibold text-gray-600 mb-2">Members</h2>
+                    <div id="members-list" class="space-y-2"></div>
+                </div>
+                <div id="add-member-card" class="hidden bg-white rounded-lg shadow p-4">
+                    <h2 class="text-sm font-semibold text-gray-600 mb-2">Add Member (Admin)</h2>
+                    <form id="add-member-form">
+                        <input id="invite-email" type="email" placeholder="email@company.com" class="w-full mb-2 px-3 py-2 border rounded" required />
+                        <select id="invite-role" class="w-full mb-2 px-3 py-2 border rounded">
+                            <option value="member" selected>Member</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <div id="invite-message" class="text-xs mt-2"></div>
+                        <button type="submit" class="mt-3 w-full px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">Add Member</button>
+                    </form>
+                </div>
+                <div class="bg-white rounded-lg shadow p-4">
+                    <h2 class="text-sm font-semibold text-gray-600 mb-2">Create a Note</h2>
+                    <form id="create-note-form">
+                        <input id="note-title" type="text" placeholder="Title" class="w-full mb-2 px-3 py-2 border rounded" />
+                        <textarea id="note-content" rows="6" placeholder="Write your note..." class="w-full px-3 py-2 border rounded"></textarea>
+                        <div id="message" class="text-sm text-red-600 mt-2"></div>
+                        <button type="submit" class="mt-3 w-full px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Save Note</button>
+                    </form>
+                </div>
+            </aside>
+            <main class="lg:col-span-2">
+                <div class="space-y-3" id="notes-list"></div>
+            </main>
+        </div>
+    </div>
+</body>
+</html>
+
+

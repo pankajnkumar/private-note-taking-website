@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Teams</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    </style>
+    <script type="module">
+        import { tenantDB } from './tenant-database.js';
+
+        function getCurrentUser() {
+            const raw = localStorage.getItem('defilaunch_current_user');
+            return raw ? JSON.parse(raw) : null;
+        }
+
+        function setHtml(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
+        function setText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
+
+        function renderTeams(user) {
+            const teams = tenantDB.listUserTeams(user.email);
+            const list = teams.map(t => `
+                <div class="p-3 bg-white rounded border flex items-center justify-between">
+                    <div>
+                        <div class="font-medium text-gray-800">${t.name}</div>
+                        <div class="text-xs text-gray-500">Plan: ${t.plan || 'free'} • Code: <span class="font-mono">${t.inviteCode || '-'}</span></div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <a href="notes.html?tenantId=${t.id}" class="px-3 py-1 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Open</a>
+                        <button class="px-3 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300" data-rotate="${t.id}">Rotate Code</button>
+                    </div>
+                </div>
+            `).join('');
+            setHtml('teams-list', list || '<div class="text-gray-500">No teams yet. Create one below or join with a code.</div>');
+        }
+
+        function init() {
+            const user = getCurrentUser();
+            if (!user) { window.location.href = 'login.html'; return; }
+            setText('welcome-name', user.name || user.email);
+
+            renderTeams(user);
+
+            // Create team
+            const createForm = document.getElementById('create-team-form');
+            createForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const name = (document.getElementById('team-name').value || '').trim();
+                if (!name) return;
+                const res = tenantDB.createTeam(name, user.email);
+                if (res.success) {
+                    document.getElementById('team-name').value = '';
+                    renderTeams(user);
+                }
+            });
+
+            // Join by code
+            const joinForm = document.getElementById('join-team-form');
+            joinForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const code = (document.getElementById('invite-code').value || '').trim();
+                if (!code) return;
+                const res = tenantDB.joinByInviteCode(user.email, code);
+                const msg = document.getElementById('join-message');
+                if (!res.success) {
+                    msg.textContent = 'Invalid code';
+                    msg.className = 'text-xs text-red-600 mt-1';
+                } else {
+                    msg.textContent = 'Joined team';
+                    msg.className = 'text-xs text-green-600 mt-1';
+                    document.getElementById('invite-code').value = '';
+                    renderTeams(user);
+                }
+            });
+
+            // Rotate invite code (admins only; we will allow attempt and rely on UI/ownership later)
+            document.getElementById('teams-list').addEventListener('click', (e) => {
+                const btn = e.target.closest('button[data-rotate]');
+                if (!btn) return;
+                const tenantId = btn.getAttribute('data-rotate');
+                const res = tenantDB.rotateInviteCode(tenantId);
+                if (res.success) renderTeams(user);
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</head>
+<body class="bg-gray-100">
+    <div class="max-w-3xl mx-auto p-4 space-y-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="text-xl font-semibold text-gray-800">Teams</div>
+                <div class="text-sm text-gray-500">Welcome, <span id="welcome-name"></span></div>
+            </div>
+            <a href="login.html" class="px-3 py-1 text-sm rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onclick="localStorage.removeItem('defilaunch_current_user')">Logout</a>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-4">
+            <h2 class="text-sm font-semibold text-gray-600 mb-2">Your Teams</h2>
+            <div id="teams-list" class="space-y-2"></div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-white rounded-lg shadow p-4">
+                <h2 class="text-sm font-semibold text-gray-600 mb-2">Create Team</h2>
+                <form id="create-team-form">
+                    <input id="team-name" type="text" placeholder="Team name" class="w-full mb-2 px-3 py-2 border rounded" required />
+                    <button type="submit" class="w-full px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">Create</button>
+                </form>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4">
+                <h2 class="text-sm font-semibold text-gray-600 mb-2">Join with Code</h2>
+                <form id="join-team-form">
+                    <input id="invite-code" type="text" placeholder="6-char code" class="w-full mb-1 px-3 py-2 border rounded uppercase" maxlength="12" />
+                    <div id="join-message" class="text-xs mt-1"></div>
+                    <button type="submit" class="mt-2 w-full px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Join</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+
+
